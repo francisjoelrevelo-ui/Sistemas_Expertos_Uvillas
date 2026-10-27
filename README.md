@@ -17,13 +17,21 @@ Proyecto académico · Universidad Politécnica Estatal del Carchi (UPEC) · Car
    - Reglas climáticas según temperatura y humedad relativa.
    - Combinación de factores de certeza: `FC = FC1 + FC2 × (1 − FC1)`.
 3. **Ficha de manejo agronómico** para cada diagnóstico.
+4. **Historial en la nube** (Supabase): con cuenta, los diagnósticos se sincronizan y se ven desde cualquier dispositivo. Sin conexión quedan en una cola local y se suben al reconectar. En modo invitado solo se guardan en el dispositivo.
+
+## Configurar Supabase (una sola vez)
+
+1. En Supabase → **SQL Editor** → *New query*, pegar y ejecutar [`supabase/schema.sql`](supabase/schema.sql). Crea la tabla `diagnosticos` con seguridad por fila (RLS): cada usuario solo ve los suyos.
+2. En **Authentication → URL Configuration**, poner como *Site URL* `https://francisjoelrevelo-ui.github.io/Sistemas_Expertos_Uvillas/` (para que los enlaces de confirmación de correo vuelvan a la app).
+3. La URL del proyecto y la clave *publishable* están en `CONFIG` al inicio de `app.js`. Nunca colocar ahí la *secret key*.
 
 ## Archivos
 
 | Archivo | Contenido |
 |---|---|
 | `index.html` | Interfaz (Tailwind CSS vía CDN) |
-| `app.js` | IndexedDB, cuentas, modelos TF.js, motor de inferencia, sincronización |
+| `app.js` | IndexedDB, cuentas (Supabase Auth), modelos TF.js, motor de inferencia, sincronización |
+| `supabase/schema.sql` | Tabla `diagnosticos` y reglas de seguridad RLS |
 | `sw.js` | Service Worker: caché offline y Background Sync |
 | `manifest.json` | Manifiesto PWA |
 | `knowledgeBase.json` | Enfermedades, clases, preguntas y reglas SI–ENTONCES |

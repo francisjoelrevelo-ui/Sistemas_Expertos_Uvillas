@@ -4,12 +4,13 @@
  *
  * Módulos (en este archivo):
  *   1. Utilidades generales
- *   2. DB         → envoltorio de IndexedDB (diagnósticos, cola, usuarios, config, nube simulada)
- *   3. Auth       → cuentas locales (invitado / registrado) con contraseña hasheada (SHA-256)
+ *   1b. Nube      → cliente de Supabase (PostgreSQL + Auth) y conversión de filas
+ *   2. DB         → envoltorio de IndexedDB (diagnósticos, cola offline, config)
+ *   3. Auth       → modo invitado (local) o cuenta real con Supabase Auth
  *   4. Modelos    → carga de modelos Teachable Machine (URL o archivos) y persistencia offline
  *   5. Vision     → inferencia con TensorFlow.js o simulador por análisis de color
  *   6. Motor      → sistema experto: reglas de confianza, síntomas, clima y factores de certeza
- *   7. Sync       → cola de sincronización offline → nube
+ *   7. Sync       → cola offline → Supabase, y descarga del historial de otros dispositivos
  *   8. UI         → navegación, vistas, flujo de diagnóstico, historial, base de conocimiento
  *   9. Arranque   → registro del Service Worker, eventos de red, instalación PWA
  * ===================================================================== */
@@ -30,7 +31,12 @@ const norm = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '')
   .toLowerCase().replace(/[_\-]+/g, ' ').replace(/\s+/g, ' ').trim();
 
 const pct = (x, d = 0) => `${(x * 100).toFixed(d)} %`;
-const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+/** UUID v4 (la columna "id" de Supabase es de tipo uuid) */
+const uid = () => (crypto.randomUUID ? crypto.randomUUID()
+  : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (crypto.getRandomValues(new Uint8Array(1))[0] & 15);
+    return (c === 'x' ? r : (r & 3) | 8).toString(16);
+  }));
 const fechaCorta = (iso) => new Date(iso).toLocaleString('es-EC', { dateStyle: 'medium', timeStyle: 'short' });
 const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -54,6 +60,59 @@ function colorFC(fc) {
 }
 
 /* =====================================================================
+ * 1b. NUBE - Supabase (autenticación y base de datos PostgreSQL)
+ * La clave "publishable" es pública por diseño: la seguridad la dan
+ * las reglas RLS de supabase/schema.sql (cada usuario solo ve lo suyo).
+ * ===================================================================== */
+const CONFIG = {
+  supabaseUrl: 'https://oabbtyqtexaipmkjuqla.supabase.co',
+  supabaseKey: 'sb_publishable_TjK7yGYFpjnloo6W28QO6A_MLVwAUG8',
+  tabla: 'diagnosticos'
+};
+
+const Nube = {
+  cliente: null,
+
+  iniciar() {
+    if (!window.supabase?.createClient) {
+      console.warn('Librería de Supabase no disponible (¿primera carga sin conexión?).');
+      return false;
+    }
+    this.cliente = window.supabase.createClient(CONFIG.supabaseUrl, CONFIG.supabaseKey, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+    });
+    return true;
+  },
+
+  get disponible() { return !!this.cliente; },
+
+  /** Convierte un diagnóstico local en una fila de la tabla */
+  aFila(d) {
+    const { imagen, usuario, estadoSync, sincronizado, ...datos } = d;
+    return {
+      id: d.id,
+      fecha: d.fecha,
+      organo: d.organo,
+      clase_id: d.resultado.claseId,
+      diagnostico: d.resultado.nombre,
+      estado: d.resultado.estado,
+      fc: Number(d.resultado.fc.toFixed(4)),
+      temperatura: d.clima?.temp ?? null,
+      humedad: d.clima?.hr ?? null,
+      ubicacion: d.ubicacion || null,
+      fuente_ml: d.prediccion?.fuente ?? null,
+      datos,
+      imagen
+    };
+  },
+
+  /** Convierte una fila de la tabla en un diagnóstico local */
+  deFila(f) {
+    return { ...f.datos, id: f.id, imagen: f.imagen, usuario: Auth.id, estadoSync: 'sincronizado', sincronizado: f.actualizado };
+  }
+};
+
+/* =====================================================================
  * 2. DB - IndexedDB
  * ===================================================================== */
 const DB = {
@@ -72,11 +131,10 @@ const DB = {
           s.createIndex('usuario', 'usuario');
           s.createIndex('estadoSync', 'estadoSync');
         }
+        // Cola de cambios pendientes de subir a Supabase
         if (!db.objectStoreNames.contains('cola'))     db.createObjectStore('cola', { keyPath: 'id' });
-        if (!db.objectStoreNames.contains('usuarios')) db.createObjectStore('usuarios', { keyPath: 'email' });
+        // Preferencias, perfil en caché y metadatos de modelos
         if (!db.objectStoreNames.contains('config'))   db.createObjectStore('config', { keyPath: 'clave' });
-        // "nube" simula el servidor remoto cuando no hay un endpoint real configurado
-        if (!db.objectStoreNames.contains('nube'))     db.createObjectStore('nube', { keyPath: 'id' });
       };
       req.onsuccess = () => { this.db = req.result; resolve(this.db); };
       req.onerror = () => reject(req.error);
@@ -106,53 +164,97 @@ const DB = {
 };
 
 /* =====================================================================
- * 3. AUTH - cuentas locales simuladas
+ * 3. AUTH - cuentas reales con Supabase Auth (correo y contraseña)
+ *    - Invitado: sin cuenta, todo se guarda solo en el dispositivo.
+ *    - Registrado: la sesión se guarda en el navegador y sigue activa sin conexión;
+ *      los diagnósticos se sincronizan con la nube al haber red.
  * ===================================================================== */
 const Auth = {
-  usuario: null, // null = invitado
+  usuario: null, // null = invitado · { id, email, nombre, institucion, creado }
 
-  /** Hash SHA-256 con sal (si el contexto no es seguro, usa un hash simple de respaldo) */
-  async hash(texto, sal) {
-    const datos = new TextEncoder().encode(`${sal}:${texto}`);
-    if (crypto.subtle) {
-      const buf = await crypto.subtle.digest('SHA-256', datos);
-      return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
-    }
-    let h = 0; for (const b of datos) h = (h * 31 + b) | 0; return `fallback-${h}`;
+  /** Traduce los errores más comunes de Supabase */
+  traducir(error) {
+    const m = String(error?.message || error);
+    if (/Invalid login credentials/i.test(m)) return 'Correo o contraseña incorrectos.';
+    if (/Email not confirmed/i.test(m)) return 'Debe confirmar su correo: revise su bandeja de entrada (y spam).';
+    if (/already registered/i.test(m)) return 'Ya existe una cuenta con ese correo. Inicie sesión.';
+    if (/Password should be at least/i.test(m)) return 'La contraseña debe tener al menos 6 caracteres.';
+    if (/rate limit|too many/i.test(m)) return 'Demasiados intentos. Espere unos minutos e intente de nuevo.';
+    if (/Failed to fetch|NetworkError/i.test(m)) return 'Sin conexión con el servidor. Intente cuando tenga internet.';
+    return m;
   },
 
+  /** Convierte el usuario de Supabase en el perfil que usa la app */
+  perfilDe(u) {
+    return {
+      id: u.id,
+      email: u.email,
+      nombre: u.user_metadata?.nombre || u.email.split('@')[0],
+      institucion: u.user_metadata?.institucion || '',
+      creado: u.created_at
+    };
+  },
+
+  async _fijar(u) {
+    this.usuario = u ? this.perfilDe(u) : null;
+    // Copia local del perfil para mostrarlo sin conexión
+    await DB.setConfig('perfil', this.usuario);
+  },
+
+  /** Recupera la sesión guardada (funciona sin conexión) */
   async restaurar() {
-    const email = await DB.getConfig('sesion');
-    if (email) this.usuario = (await DB.get('usuarios', email)) || null;
+    if (Nube.disponible) {
+      try {
+        const { data } = await Nube.cliente.auth.getSession();
+        if (data.session) return this._fijar(data.session.user);
+        if (navigator.onLine) return this._fijar(null);
+      } catch (e) { console.warn('Sesión no verificada', e); }
+    }
+    // Sin red o sin librería: se usa el último perfil conocido
+    this.usuario = await DB.getConfig('perfil');
   },
 
   async registrar({ nombre, email, password, institucion }) {
-    email = email.trim().toLowerCase();
-    if (!nombre.trim() || !email || password.length < 6) throw new Error('Complete nombre, correo y una contraseña de al menos 6 caracteres.');
-    if (await DB.get('usuarios', email)) throw new Error('Ya existe una cuenta con ese correo.');
-    const sal = uid();
-    const usuario = { email, nombre: nombre.trim(), institucion: institucion?.trim() || '', sal, hash: await this.hash(password, sal), creado: new Date().toISOString() };
-    await DB.put('usuarios', usuario);
-    await this._iniciar(usuario);
-    return usuario;
+    if (!Nube.disponible || !navigator.onLine) throw new Error('Necesita conexión a internet para crear la cuenta.');
+    if (!nombre.trim()) throw new Error('Escriba su nombre.');
+    const { data, error } = await Nube.cliente.auth.signUp({
+      email: email.trim().toLowerCase(),
+      password,
+      options: {
+        data: { nombre: nombre.trim(), institucion: institucion?.trim() || '' },
+        // Tras confirmar el correo, el enlace vuelve a esta misma app
+        emailRedirectTo: location.origin + location.pathname
+      }
+    });
+    if (error) throw new Error(this.traducir(error));
+    // Si Supabase exige confirmar el correo, no hay sesión todavía
+    if (!data.session) return { requiereConfirmacion: true };
+    await this._fijar(data.user);
+    return { requiereConfirmacion: false };
   },
 
   async ingresar(email, password) {
-    email = email.trim().toLowerCase();
-    const u = await DB.get('usuarios', email);
-    if (!u || u.hash !== await this.hash(password, u.sal)) throw new Error('Correo o contraseña incorrectos.');
-    await this._iniciar(u);
-    return u;
+    if (!Nube.disponible || !navigator.onLine) throw new Error('Necesita conexión a internet para iniciar sesión.');
+    const { data, error } = await Nube.cliente.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+    if (error) throw new Error(this.traducir(error));
+    await this._fijar(data.user);
   },
 
-  async _iniciar(u) {
-    this.usuario = u;
-    await DB.setConfig('sesion', u.email);
+  async recuperar(email) {
+    if (!email) throw new Error('Escriba su correo en el formulario de inicio de sesión.');
+    const { error } = await Nube.cliente.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo: location.origin + location.pathname + '#cuenta' });
+    if (error) throw new Error(this.traducir(error));
+  },
+
+  async cambiarPassword(password) {
+    const { error } = await Nube.cliente.auth.updateUser({ password });
+    if (error) throw new Error(this.traducir(error));
   },
 
   async salir() {
-    this.usuario = null;
-    await DB.setConfig('sesion', null);
+    // Sin red solo se borra la sesión local
+    try { await Nube.cliente?.auth.signOut(navigator.onLine ? undefined : { scope: 'local' }); } catch { /* ignorar */ }
+    await this._fijar(null);
   },
 
   get id() { return this.usuario ? this.usuario.email : 'invitado'; },
@@ -515,21 +617,34 @@ const Motor = {
 };
 
 /* =====================================================================
- * 7. SYNC - cola offline → nube
+ * 7. SYNC - cola offline → Supabase
+ * Cada elemento de la cola es { id, op: 'guardar' | 'eliminar', usuario }.
  * ===================================================================== */
 const Sync = {
   enCurso: false,
+  ultima: null,
+
+  async encolar(id, op) {
+    await DB.put('cola', { id, op, usuario: Auth.id, intentos: 0, creado: new Date().toISOString() });
+    if (navigator.onLine) this.sincronizar();
+    else this.registrarBackgroundSync();
+    UI.actualizarBadgeCola();
+  },
 
   /** Guarda un diagnóstico y, si el usuario está registrado, lo encola */
   async guardar(diag) {
     diag.usuario = Auth.id;
     diag.estadoSync = Auth.esInvitado ? 'local' : 'pendiente';
     await DB.put('diagnosticos', diag);
-    if (!Auth.esInvitado) {
-      await DB.put('cola', { id: diag.id, intentos: 0, creado: new Date().toISOString() });
-      if (navigator.onLine) this.sincronizar();
-      else this.registrarBackgroundSync();
-    }
+    if (!Auth.esInvitado) await this.encolar(diag.id, 'guardar');
+    UI.actualizarBadgeCola();
+  },
+
+  /** Elimina en el dispositivo y, si estaba en la nube, también allá */
+  async eliminar(diag) {
+    await DB.del('diagnosticos', diag.id);
+    await DB.del('cola', diag.id);
+    if (!Auth.esInvitado && diag.estadoSync === 'sincronizado') await this.encolar(diag.id, 'eliminar');
     UI.actualizarBadgeCola();
   },
 
@@ -540,58 +655,82 @@ const Sync = {
     } catch { /* no soportado: se sincroniza con el evento "online" */ }
   },
 
-  /** Envía un diagnóstico al servidor (endpoint real o nube simulada) */
-  async enviar(diag) {
-    const api = await DB.getConfig('apiUrl', '');
-    if (api) {
-      const r = await fetch(api, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(diag) });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    } else {
-      await dormir(250); // latencia simulada
-      await DB.put('nube', { ...diag, recibido: new Date().toISOString() });
-    }
-  },
-
-  /** Vacía la cola de sincronización */
+  /** Vacía la cola de sincronización contra Supabase */
   async sincronizar({ silencioso = false } = {}) {
-    if (this.enCurso || !navigator.onLine || Auth.esInvitado) return;
+    if (this.enCurso || !navigator.onLine || Auth.esInvitado || !Nube.disponible) return;
     this.enCurso = true;
-    let ok = 0, fallos = 0;
+    let ok = 0, fallos = 0, ultimoError = '';
     try {
-      const cola = await DB.todos('cola');
+      const cola = (await DB.todos('cola')).filter((i) => !i.usuario || i.usuario === Auth.id);
       for (const item of cola) {
-        const diag = await DB.get('diagnosticos', item.id);
-        if (!diag) { await DB.del('cola', item.id); continue; }
         try {
-          await this.enviar({ ...diag, estadoSync: 'sincronizado' });
-          diag.estadoSync = 'sincronizado';
-          diag.sincronizado = new Date().toISOString();
-          await DB.put('diagnosticos', diag);
+          if (item.op === 'eliminar') {
+            const { error } = await Nube.cliente.from(CONFIG.tabla).delete().eq('id', item.id);
+            if (error) throw error;
+          } else {
+            const diag = await DB.get('diagnosticos', item.id);
+            if (!diag) { await DB.del('cola', item.id); continue; }
+            const { error } = await Nube.cliente.from(CONFIG.tabla).upsert(Nube.aFila(diag));
+            if (error) throw error;
+            diag.estadoSync = 'sincronizado';
+            diag.sincronizado = new Date().toISOString();
+            await DB.put('diagnosticos', diag);
+          }
           await DB.del('cola', item.id);
           ok++;
         } catch (e) {
           fallos++;
-          await DB.put('cola', { ...item, intentos: item.intentos + 1, error: String(e) });
+          ultimoError = e.message || String(e);
+          console.warn('Error de sincronización', item, e);
+          await DB.put('cola', { ...item, intentos: (item.intentos || 0) + 1, error: ultimoError });
+          // Sesión vencida o tabla inexistente: no tiene sentido seguir intentando ahora
+          if (/JWT|401|relation|does not exist|schema cache/i.test(ultimoError)) break;
         }
       }
+      this.ultima = new Date().toISOString();
     } finally {
       this.enCurso = false;
     }
-    if (!silencioso && (ok || fallos)) toast(fallos ? `Sincronizados ${ok}, con error ${fallos}.` : `☁️ ${ok} diagnóstico(s) sincronizado(s).`, fallos ? 'aviso' : 'ok');
+    if (fallos && /relation|does not exist|schema cache/i.test(ultimoError)) toast('La tabla "diagnosticos" no existe en Supabase. Ejecute supabase/schema.sql.', 'error');
+    else if (!silencioso && (ok || fallos)) toast(fallos ? `Sincronizados ${ok}, con error ${fallos}: ${ultimoError}` : `☁️ ${ok} cambio(s) sincronizado(s).`, fallos ? 'aviso' : 'ok');
     UI.actualizarBadgeCola();
     if (App.vista === 'historial') UI.renderHistorial();
     if (App.vista === 'dashboard') UI.renderDashboard();
   },
 
-  /** Al iniciar sesión, descarga los diagnósticos del usuario que estén en la nube simulada */
-  async descargar() {
-    if (Auth.esInvitado) return;
-    const api = await DB.getConfig('apiUrl', '');
-    if (api) return; // con endpoint real, la descarga depende del backend
-    const remotos = (await DB.todos('nube')).filter((d) => d.usuario === Auth.id);
-    for (const d of remotos) {
-      if (!(await DB.get('diagnosticos', d.id))) await DB.put('diagnosticos', { ...d, estadoSync: 'sincronizado' });
+  /** Descarga el historial del usuario desde Supabase (otros dispositivos) */
+  async descargar({ silencioso = true } = {}) {
+    if (Auth.esInvitado || !navigator.onLine || !Nube.disponible) return 0;
+    const { data, error } = await Nube.cliente.from(CONFIG.tabla).select('*').order('fecha', { ascending: false });
+    if (error) {
+      console.warn('No se pudo descargar el historial', error);
+      if (!silencioso) toast(`No se pudo descargar el historial: ${error.message}`, 'error');
+      return 0;
     }
+    const pendientes = new Set((await DB.todos('cola')).map((i) => i.id));
+    const remotos = new Set();
+    let nuevos = 0;
+    for (const fila of data) {
+      remotos.add(fila.id);
+      if (pendientes.has(fila.id)) continue; // hay un cambio local más reciente
+      const local = await DB.get('diagnosticos', fila.id);
+      if (!local) nuevos++;
+      await DB.put('diagnosticos', Nube.deFila(fila));
+    }
+    // Lo que se borró desde otro dispositivo también desaparece aquí
+    for (const d of await DB.todos('diagnosticos')) {
+      if (d.usuario === Auth.id && d.estadoSync === 'sincronizado' && !remotos.has(d.id)) await DB.del('diagnosticos', d.id);
+    }
+    return nuevos;
+  },
+
+  /** Sube cambios pendientes y luego trae los de otros dispositivos */
+  async completa({ silencioso = false } = {}) {
+    await this.sincronizar({ silencioso });
+    const nuevos = await this.descargar({ silencioso });
+    if (!silencioso && nuevos) toast(`⬇️ ${nuevos} diagnóstico(s) recibidos de otros dispositivos.`, 'ok');
+    if (App.vista === 'historial') UI.renderHistorial();
+    if (App.vista === 'dashboard') UI.renderDashboard();
   },
 
   /** Pasa los diagnósticos de invitado a la cuenta actual */
@@ -600,7 +739,7 @@ const Sync = {
     for (const d of locales) {
       d.usuario = Auth.id; d.estadoSync = 'pendiente';
       await DB.put('diagnosticos', d);
-      await DB.put('cola', { id: d.id, intentos: 0, creado: new Date().toISOString() });
+      await DB.put('cola', { id: d.id, op: 'guardar', usuario: Auth.id, intentos: 0, creado: new Date().toISOString() });
     }
     await this.sincronizar();
     return locales.length;
@@ -706,9 +845,14 @@ const UI = {
     const modelosCargados = Object.keys(Modelos.cargados).length;
     const swActivo = !!navigator.serviceWorker?.controller;
     const item = (t, v, ok) => `<div class="p-3 rounded-xl ${ok ? 'bg-hoja-50 text-hoja-800' : 'bg-uvilla-50 text-uvilla-700'}"><div class="text-[11px]">${t}</div><div class="font-medium">${v}</div></div>`;
+    const nube = !Nube.disponible ? ['No disponible', false]
+      : Auth.esInvitado ? ['Inicie sesión para sincronizar', false]
+      : !navigator.onLine ? ['Sin conexión: cola offline', false]
+      : [`Supabase conectado${Sync.ultima ? ' · ' + new Date(Sync.ultima).toLocaleTimeString('es-EC', { timeStyle: 'short' }) : ''}`, true];
     $('#estado-sistema').innerHTML =
       item('Modelos de visión', modelosCargados ? `${modelosCargados}/3 cargados` : 'Simulador activo', modelosCargados === 3) +
       item('Modo offline', swActivo ? 'Service Worker activo' : 'Pendiente (recargue)', swActivo) +
+      item('Nube (historial)', nube[0], nube[1]) +
       item('Base de conocimiento', `${Object.keys(App.kb.enfermedades).length - 1} enfermedades · ${App.kb.reglas.sintomas.length + App.kb.reglas.confianza.length + App.kb.reglas.climaticas.length} reglas`, true);
   },
 
@@ -1025,10 +1169,12 @@ const UI = {
   },
 
   async eliminar(id) {
-    if (!confirm('¿Eliminar este diagnóstico del dispositivo?')) return;
-    await DB.del('diagnosticos', id);
-    await DB.del('cola', id);
-    this.renderHistorial(); this.actualizarBadgeCola();
+    const d = await DB.get('diagnosticos', id);
+    if (!d) return;
+    const enNube = !Auth.esInvitado && d.estadoSync === 'sincronizado';
+    if (!confirm(enNube ? '¿Eliminar este diagnóstico del dispositivo y de la nube?' : '¿Eliminar este diagnóstico del dispositivo?')) return;
+    await Sync.eliminar(d);
+    this.renderHistorial();
     toast('Diagnóstico eliminado.');
   },
 
@@ -1212,6 +1358,7 @@ const UI = {
             <input name="email" type="email" required placeholder="Correo" autocomplete="username" class="w-full border border-tierra-100 rounded-lg px-3 py-2 text-sm" />
             <input name="password" type="password" required placeholder="Contraseña" autocomplete="current-password" class="w-full border border-tierra-100 rounded-lg px-3 py-2 text-sm" />
             <button class="w-full bg-hoja-700 text-white text-sm font-medium py-2.5 rounded-xl">Ingresar</button>
+            <button type="button" data-accion="recuperar" class="w-full text-xs text-hoja-700 underline">¿Olvidó su contraseña?</button>
           </form>
           <form id="form-registro" class="bg-white rounded-2xl p-4 shadow-sm border border-tierra-100 space-y-3">
             <h3 class="font-semibold">Crear cuenta</h3>
@@ -1223,12 +1370,12 @@ const UI = {
             <button class="w-full bg-uvilla-500 text-white text-sm font-medium py-2.5 rounded-xl">Registrarme</button>
           </form>
         </div>
-        <p class="text-[11px] text-tierra-600">Autenticación simulada para fines académicos: las cuentas se guardan localmente (contraseña con hash SHA-256 y sal). Para producción, conecte un backend real en “Endpoint de sincronización”.</p>`;
+        <p class="text-[11px] text-tierra-600">Cuentas gestionadas con Supabase Auth. Al registrarse recibirá un correo de confirmación. Su historial se guarda en la nube y solo usted puede verlo.</p>`;
     } else {
       const u = Auth.usuario;
       const mios = (await DB.todos('diagnosticos')).filter((d) => d.usuario === u.email);
       const nInv = (await DB.todos('diagnosticos')).filter((d) => d.usuario === 'invitado').length;
-      const api = await DB.getConfig('apiUrl', '');
+      const pendientes = mios.filter((d) => d.estadoSync === 'pendiente').length;
       cont.innerHTML = `
         <div class="bg-white rounded-2xl p-4 shadow-sm border border-tierra-100 flex items-center gap-4">
           <div class="w-14 h-14 rounded-full bg-hoja-700 text-white grid place-items-center text-xl font-semibold">${esc(u.nombre[0].toUpperCase())}</div>
@@ -1240,11 +1387,15 @@ const UI = {
           <button data-accion="salir" class="ml-auto text-sm bg-tierra-100 px-3 py-2 rounded-lg">Cerrar sesión</button>
         </div>
         ${nInv ? `<div class="p-4 rounded-2xl bg-uvilla-50 text-sm flex flex-wrap items-center gap-3">Hay ${nInv} diagnóstico(s) de invitado en este dispositivo.<button data-accion="migrar" class="ml-auto bg-uvilla-500 text-white px-3 py-1.5 rounded-lg">Pasarlos a mi cuenta</button></div>` : ''}
-        <form id="form-api" class="bg-white rounded-2xl p-4 shadow-sm border border-tierra-100 space-y-2">
-          <h3 class="font-semibold">Endpoint de sincronización (opcional)</h3>
-          <p class="text-[12px] text-tierra-600">Si lo deja vacío, la sincronización usa una nube simulada local. Con un endpoint, cada diagnóstico se envía como JSON por POST.</p>
+        <div class="bg-white rounded-2xl p-4 shadow-sm border border-tierra-100 space-y-2">
+          <h3 class="font-semibold">☁️ Historial en la nube</h3>
+          <p class="text-sm text-tierra-600">${navigator.onLine ? 'Conectado a Supabase.' : 'Sin conexión: los cambios esperan en la cola offline.'} ${pendientes ? `<b>${pendientes}</b> pendiente(s) de subir.` : 'Todo sincronizado.'}${Sync.ultima ? ` Última sincronización: ${fechaCorta(Sync.ultima)}.` : ''}</p>
+          <button data-accion="sync-completa" class="text-sm bg-hoja-700 text-white px-3 py-2 rounded-lg">🔄 Sincronizar ahora</button>
+        </div>
+        <form id="form-password" class="bg-white rounded-2xl p-4 shadow-sm border border-tierra-100 space-y-2">
+          <h3 class="font-semibold">Cambiar contraseña</h3>
           <div class="flex gap-2">
-            <input name="api" type="url" value="${esc(api)}" placeholder="https://mi-servidor/api/diagnosticos" class="flex-1 min-w-0 border border-tierra-100 rounded-lg px-3 py-2 text-sm" />
+            <input name="password" type="password" required minlength="6" placeholder="Nueva contraseña (mín. 6)" autocomplete="new-password" class="flex-1 min-w-0 border border-tierra-100 rounded-lg px-3 py-2 text-sm" />
             <button class="text-sm bg-hoja-700 text-white px-3 py-2 rounded-lg">Guardar</button>
           </div>
         </form>`;
@@ -1289,6 +1440,16 @@ const UI = {
           const n = await Sync.migrarInvitado(); toast(`${n} diagnóstico(s) pasados a su cuenta.`, 'ok'); this.renderCuenta();
           break;
         }
+        case 'sync-completa':
+          if (!navigator.onLine) return toast('Sin conexión: se sincronizará al reconectar.', 'aviso');
+          await Sync.completa(); this.renderCuenta();
+          break;
+        case 'recuperar':
+          try {
+            await Auth.recuperar($('#form-login [name=email]').value);
+            toast('Le enviamos un correo para restablecer la contraseña.', 'ok');
+          } catch (err) { toast(err.message, 'error'); }
+          break;
       }
     });
 
@@ -1303,15 +1464,29 @@ const UI = {
           $$('input[type=radio]:checked', f).forEach((r) => { resp[r.name.slice(2)] = r.value; });
           await this.finalizar(resp);
         } else if (f.id === 'form-login') {
-          await Auth.ingresar(datos.email, datos.password);
-          await Sync.descargar();
-          this.despuesDeSesion('Bienvenido/a de nuevo.');
+          const btn = f.querySelector('button:not([type=button])'); btn.disabled = true; btn.textContent = 'Ingresando…';
+          try {
+            await Auth.ingresar(datos.email, datos.password);
+            if (await DB.getConfig('migrarAlIngresar')) { await Sync.migrarInvitado(); await DB.setConfig('migrarAlIngresar', false); }
+            this.despuesDeSesion(`Bienvenido/a, ${Auth.usuario.nombre}.`);
+          } finally { btn.disabled = false; btn.textContent = 'Ingresar'; }
         } else if (f.id === 'form-registro') {
-          await Auth.registrar(datos);
-          if (datos.migrar) await Sync.migrarInvitado();
-          this.despuesDeSesion('Cuenta creada correctamente.');
-        } else if (f.id === 'form-api') {
-          await DB.setConfig('apiUrl', datos.api.trim()); toast('Endpoint guardado.', 'ok');
+          const btn = f.querySelector('button'); btn.disabled = true; btn.textContent = 'Creando cuenta…';
+          try {
+            const r = await Auth.registrar(datos);
+            if (r.requiereConfirmacion) {
+              // Los diagnósticos de invitado se pasarán a la cuenta en el primer ingreso
+              await DB.setConfig('migrarAlIngresar', !!datos.migrar);
+              f.outerHTML = `<div class="bg-hoja-50 rounded-2xl p-4 border border-hoja-200 text-sm text-hoja-800">
+                <h3 class="font-semibold text-base">📧 Revise su correo</h3>
+                <p class="mt-1">Enviamos un enlace de confirmación a <b>${esc(datos.email)}</b>. Ábralo (revise también spam) y luego inicie sesión aquí.</p></div>`;
+              return;
+            }
+            if (datos.migrar) await Sync.migrarInvitado();
+            this.despuesDeSesion('Cuenta creada correctamente.');
+          } finally { if (btn.isConnected) { btn.disabled = false; btn.textContent = 'Registrarme'; } }
+        } else if (f.id === 'form-password') {
+          await Auth.cambiarPassword(datos.password); f.reset(); toast('Contraseña actualizada.', 'ok');
         } else if (f.dataset.formUrl) {
           this.cargarModelo(f.dataset.formUrl, () => Modelos.desdeURL(f.dataset.formUrl, datos.url));
         }
@@ -1347,7 +1522,7 @@ const UI = {
     // Historial
     $('#filtro-organo').addEventListener('change', () => this.renderHistorial());
     $('#filtro-sync').addEventListener('change', () => this.renderHistorial());
-    $('#btn-sincronizar').addEventListener('click', () => navigator.onLine ? Sync.sincronizar() : toast('Sin conexión: se sincronizará automáticamente al reconectar.', 'aviso'));
+    $('#btn-sincronizar').addEventListener('click', () => navigator.onLine ? Sync.completa() : toast('Sin conexión: se sincronizará automáticamente al reconectar.', 'aviso'));
     $('#btn-exportar').addEventListener('click', () => this.exportarCSV());
 
     // Modal
@@ -1359,7 +1534,7 @@ const UI = {
   despuesDeSesion(msg) {
     this.actualizarPerfil();
     this.actualizarBadgeCola();
-    Sync.sincronizar({ silencioso: true });
+    Sync.completa({ silencioso: true });
     toast(msg, 'ok');
     this.ir('dashboard');
   }
@@ -1377,7 +1552,27 @@ async function iniciar() {
   }
 
   await DB.abrir();
+  Nube.iniciar();
+  // También procesa los enlaces del correo (confirmación de cuenta / recuperación)
   await Auth.restaurar();
+  if (!Auth.esInvitado && await DB.getConfig('migrarAlIngresar')) {
+    await DB.setConfig('migrarAlIngresar', false);
+    const n = await Sync.migrarInvitado();
+    if (n) toast(`${n} diagnóstico(s) de invitado pasados a su cuenta.`, 'ok');
+  }
+  Nube.cliente?.auth.onAuthStateChange((evento, sesion) => {
+    // Diferido para no bloquear el cliente de Supabase dentro del callback
+    setTimeout(async () => {
+      if (evento === 'PASSWORD_RECOVERY') {
+        await Auth._fijar(sesion?.user || null);
+        UI.actualizarPerfil(); UI.ir('cuenta');
+        toast('Escriba su nueva contraseña en "Cambiar contraseña".', 'aviso');
+      } else if (evento === 'SIGNED_OUT' && !Auth.esInvitado && navigator.onLine) {
+        // Sesión revocada o vencida en el servidor
+        await Auth._fijar(null); UI.actualizarPerfil(); UI.actualizarBadgeCola();
+      }
+    }, 0);
+  });
 
   // Valores climáticos iniciales (típicos de zonas uvilleras del Carchi)
   const t = await DB.getConfig('ultimaTemp', 16), h = await DB.getConfig('ultimaHR', 80);
@@ -1403,9 +1598,9 @@ async function iniciar() {
   esperarTF();
 
   // Conectividad
-  window.addEventListener('online', () => { UI.actualizarRed(); toast('Conexión restablecida.', 'ok'); Sync.sincronizar(); });
+  window.addEventListener('online', () => { UI.actualizarRed(); toast('Conexión restablecida.', 'ok'); Sync.completa(); });
   window.addEventListener('offline', () => { UI.actualizarRed(); toast('Sin conexión: los diagnósticos se guardarán en la cola offline.', 'aviso'); });
-  if (navigator.onLine) Sync.sincronizar({ silencioso: true });
+  if (navigator.onLine) Sync.completa({ silencioso: true });
 
   // Service Worker
   if ('serviceWorker' in navigator) {

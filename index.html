@@ -117,7 +117,7 @@
 
         <div class="bg-white rounded-2xl p-4 shadow-sm border border-tierra-100">
           <h3 class="font-semibold mb-2">Estado del sistema</h3>
-          <div id="estado-sistema" class="grid sm:grid-cols-3 gap-3 text-sm"></div>
+          <div id="estado-sistema" class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm"></div>
         </div>
       </section>
 
@@ -297,6 +297,8 @@
 
   <!-- TensorFlow.js (se carga después de la interfaz) -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js" defer></script>
+  <!-- Supabase (autenticación + base de datos del historial) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.js" defer></script>
   <script src="app.js" defer></script>
 </body>
 </html>

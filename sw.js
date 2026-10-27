@@ -9,7 +9,7 @@
  *  - Background Sync: avisa a la app para vaciar la cola de sincronización.
  * ===================================================================== */
 
-const VERSION = 'uvilladx-v1.0.2';
+const VERSION = 'uvilladx-v1.1.0';
 const CACHE_SHELL = `${VERSION}-shell`;
 const CACHE_CDN = `${VERSION}-cdn`;
 const CACHE_MODELOS = 'uvilladx-modelos'; // sin versión: los modelos sobreviven a actualizaciones
@@ -29,7 +29,8 @@ const APP_SHELL = [
 // Librerías externas (versiones fijas para que la caché sea estable)
 const CDN_ASSETS = [
   'https://cdn.tailwindcss.com/3.4.16',
-  'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js'
+  'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js',
+  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.js'
 ];
 
 /* ---------- Instalación: precache del shell y de las librerías ---------- */
@@ -103,6 +104,9 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return; // POST de sincronización pasa directo a la red
 
   const url = new URL(request.url);
+
+  // 0) API de Supabase (datos y autenticación): siempre directo a la red, nunca en caché
+  if (url.hostname.endsWith('.supabase.co')) return;
 
   // 1) Navegación: red primero, si falla se sirve index.html cacheado
   if (request.mode === 'navigate') {
