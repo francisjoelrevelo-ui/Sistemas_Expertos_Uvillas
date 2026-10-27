@@ -9,7 +9,7 @@
  *  - Background Sync: avisa a la app para vaciar la cola de sincronización.
  * ===================================================================== */
 
-const VERSION = 'uvilladx-v1.0.0';
+const VERSION = 'uvilladx-v1.0.1';
 const CACHE_SHELL = `${VERSION}-shell`;
 const CACHE_CDN = `${VERSION}-cdn`;
 const CACHE_MODELOS = 'uvilladx-modelos'; // sin versión: los modelos sobreviven a actualizaciones
@@ -42,8 +42,11 @@ self.addEventListener('install', (event) => {
     const cdn = await caches.open(CACHE_CDN);
     await Promise.all(CDN_ASSETS.map(async (url) => {
       try {
-        const resp = await fetch(url, { mode: 'cors' });
-        if (resp.ok) await cdn.put(url, resp);
+        let resp = await fetch(url, { mode: 'cors' }).catch(() => null);
+        // Si el CDN no permite CORS (p. ej. Tailwind), se guarda una respuesta opaca:
+        // sirve igual para etiquetas <script>.
+        if (!resp || !resp.ok) resp = await fetch(url, { mode: 'no-cors' });
+        if (resp.ok || resp.type === 'opaque') await cdn.put(url, resp);
       } catch (e) {
         console.warn('[SW] No se pudo precachear', url, e);
       }

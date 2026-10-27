@@ -313,7 +313,8 @@ const Vision = {
     const tejidoSano = organo === 'frutos' ? amarillo : verde;
     const lesion = marron + oscuro + blanco + gris;
     const pesos = {
-      sano:                tejidoSano * 2.2 - lesion * 2.5,
+      // Pocas lesiones ya restan mucho a "sano" (15 % de manchas basta para dudar)
+      sano:                tejidoSano * 1.5 - lesion * 6,
       mancha_gris:         gris * 3.2 + marron * 0.8,
       muerte_descendente:  marron * 1.8 + oscuro * 2.2,
       esclerotiniosis:     blanco * 2.4 + oscuro * 1.6,
