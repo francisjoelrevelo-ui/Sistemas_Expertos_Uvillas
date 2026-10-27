@@ -12,7 +12,9 @@
     "umbralRechazo": 0.50,
     "umbralReevaluacion": 0.70,
     "margenDesempate": 0.15,
-    "umbralIndiceVegetal": 0.20,
+    "umbralIndiceVegetal": 0.25,
+    "umbralIndiceCentral": 0.40,
+    "umbralAzul": 0.25,
     "umbralDiagnosticoConfirmado": 0.75,
     "umbralDiagnosticoProbable": 0.55,
     "clasesAjenas": ["fondo", "otro", "otros", "background", "no uvilla", "ajeno", "desconocido", "class 0"]
@@ -271,7 +273,7 @@
 
   "reglas": {
     "confianza": [
-      { "id": "RC-01", "si": "La clase predicha pertenece a una clase ajena (fondo/otro) o el índice vegetal de la imagen es menor al umbral", "entonces": "RECHAZAR: la imagen no corresponde al órgano seleccionado. Solicitar otra fotografía.", "accion": "RECHAZAR_AJENA" },
+      { "id": "RC-01", "si": "(Etapa 0, antes del modelo) índice vegetal < 25 % O tejido vegetal en el centro < 40 % O cielo/agua > 25 %; o bien el modelo predice su clase ajena (fondo/otro)", "entonces": "RECHAZAR sin clasificar: la imagen no corresponde al órgano seleccionado. Solicitar otra fotografía.", "accion": "RECHAZAR_AJENA" },
       { "id": "RC-02", "si": "Confianza máxima del modelo < 0.50", "entonces": "RECHAZAR: confianza insuficiente. Solicitar una nueva fotografía con mejor luz y enfoque.", "accion": "RECHAZAR_CONFIANZA" },
       { "id": "RC-03", "si": "0.50 ≤ Confianza máxima < 0.70", "entonces": "REEVALUAR: activar preguntas de síntomas para confirmar el diagnóstico.", "accion": "REEVALUAR" },
       { "id": "RC-04", "si": "Diferencia entre la 1.ª y 2.ª clase < 0.15", "entonces": "DESEMPATAR: aplicar reglas de síntomas entre las clases en conflicto.", "accion": "DESEMPATAR" },

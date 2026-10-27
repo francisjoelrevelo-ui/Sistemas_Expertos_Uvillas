@@ -377,25 +377,55 @@ const Vision = {
     const ctx = c.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(img, 0, 0, N, N);
     const px = ctx.getImageData(0, 0, N, N).data;
-    const cuenta = { verde: 0, amarillo: 0, marron: 0, blanco: 0, gris: 0, oscuro: 0, otro: 0 };
-    let semilla = 0;
+    const cuenta = { verde: 0, amarillo: 0, marron: 0, blanco: 0, gris: 0, oscuro: 0, otro: 0, azul: 0 };
+    // Peso de cada categoría como "tejido vegetal" (sano o enfermo)
+    const pesoVegetal = { verde: 1, amarillo: 1, marron: 1, blanco: 0.5, gris: 0.3, oscuro: 0.2, otro: 0 };
+    // Zona central (50 % del ancho y alto): ahí debe estar el órgano
+    const c0 = N / 4, c1 = (3 * N) / 4;
+    let semilla = 0, vegetalCentro = 0, totalCentro = 0;
+    const centro = { verde: 0, amarillo: 0, marron: 0, blanco: 0, gris: 0, oscuro: 0, otro: 0 };
     for (let i = 0; i < px.length; i += 4) {
       const [h, s, v] = this.hsv(px[i], px[i + 1], px[i + 2]);
       semilla = (semilla * 31 + px[i] + px[i + 1] * 7 + px[i + 2] * 13) >>> 0;
-      if (v < 0.18) cuenta.oscuro++;
-      else if (s < 0.15 && v > 0.78) cuenta.blanco++;
-      else if (s < 0.15) cuenta.gris++;
-      else if (h >= 65 && h <= 170 && s > 0.18) cuenta.verde++;
-      else if (h >= 20 && h < 65 && s > 0.35 && v > 0.45) cuenta.amarillo++;
-      else if (h < 45 && v <= 0.6) cuenta.marron++;
-      else cuenta.otro++;
+      let cat;
+      if (v < 0.18) cat = 'oscuro';
+      else if (s < 0.15 && v > 0.78) cat = 'blanco';
+      else if (s < 0.15) cat = 'gris';
+      else if (h >= 65 && h <= 170 && s > 0.18) cat = 'verde';
+      else if (h >= 20 && h < 65 && s > 0.35 && v > 0.45) cat = 'amarillo';
+      else if (h < 45 && v <= 0.6) cat = 'marron';
+      else cat = 'otro';
+      cuenta[cat]++;
+      // Cielo y agua: tonos cian/azules saturados (no aparecen en tejido de uvilla)
+      if (cat === 'otro' && h > 170 && h < 260 && s > 0.2) cuenta.azul++;
+      const p = (i / 4), x = p % N, y = Math.floor(p / N);
+      if (x >= c0 && x < c1 && y >= c0 && y < c1) { totalCentro++; vegetalCentro += pesoVegetal[cat]; centro[cat]++; }
     }
     const total = N * N;
     const f = Object.fromEntries(Object.entries(cuenta).map(([k, v]) => [k, v / total]));
     // Índice vegetal: fracción de píxeles compatibles con tejido vegetal sano o enfermo
-    f.indiceVegetal = Math.min(1, f.verde + f.amarillo + f.marron + 0.5 * f.blanco + 0.3 * f.gris + 0.2 * f.oscuro);
+    f.indiceVegetal = Math.min(1, ['verde', 'amarillo', 'marron', 'blanco', 'gris', 'oscuro'].reduce((a, k) => a + pesoVegetal[k] * f[k], 0));
+    f.indiceCentral = vegetalCentro / totalCentro;
+    // Proporciones de color solo en el centro (donde está el órgano, sin el fondo)
+    f.centro = Object.fromEntries(Object.entries(centro).map(([k, v]) => [k, v / totalCentro]));
     f.semilla = semilla;
     return f;
+  },
+
+  /**
+   * ETAPA 0 · Validación de la imagen (antes de cualquier clasificación).
+   * Si la foto no muestra un órgano vegetal, NO se ejecuta el modelo.
+   */
+  validar(color) {
+    const P = App.kb.parametros;
+    const motivos = [];
+    if (color.indiceVegetal < P.umbralIndiceVegetal)
+      motivos.push(`Poco tejido vegetal en la imagen: ${pct(color.indiceVegetal)} (mínimo ${pct(P.umbralIndiceVegetal)}).`);
+    if (color.indiceCentral < P.umbralIndiceCentral)
+      motivos.push(`El centro de la foto no muestra el órgano: ${pct(color.indiceCentral)} de tejido vegetal (mínimo ${pct(P.umbralIndiceCentral)}).`);
+    if (color.azul > P.umbralAzul)
+      motivos.push(`Predominan cielo o agua (tonos azules): ${pct(color.azul)} (máximo ${pct(P.umbralAzul)}).`);
+    return { valida: motivos.length === 0, motivos };
   },
 
   softmax(v, t = 1) {
@@ -411,7 +441,8 @@ const Vision = {
    */
   simular(organo, color) {
     const clases = App.kb.organos[organo].clases;
-    const { verde, amarillo, marron, blanco, gris, oscuro } = color;
+    // Se usa el centro de la imagen para que el fondo (cartón, suelo) no cuente como lesión
+    const { verde, amarillo, marron, blanco, gris, oscuro } = color.centro;
     const tejidoSano = organo === 'frutos' ? amarillo : verde;
     const lesion = marron + oscuro + blanco + gris;
     const pesos = {
@@ -455,6 +486,11 @@ const Vision = {
   /** Punto de entrada: devuelve la predicción ordenada y metadatos */
   async predecir(organo, img) {
     const color = this.analizarColor(img);
+    // Etapa 0: si la imagen no es válida, no se clasifica
+    const validacion = this.validar(color);
+    if (!validacion.valida) {
+      return { ajena: true, motivos: validacion.motivos, probs: [], fuente: null, indiceVegetal: color.indiceVegetal, color };
+    }
     let probs, fuente;
     if (Modelos.cargados[organo] && Modelos.tfDisponible()) {
       probs = await this.predecirModelo(organo, img);
@@ -494,11 +530,14 @@ const Motor = {
     const top = pred.probs[0];
     const top1 = validas[0], top2 = validas[1];
 
-    // RC-01: imagen ajena (clase "Fondo/Otro" del modelo o índice vegetal bajo)
-    if (top.claseId === '__ajena__' || pred.indiceVegetal < P.umbralIndiceVegetal) {
-      disparadas.push({ ...R['RC-01'], detalle: top.claseId === '__ajena__'
-        ? `El modelo clasificó la imagen como "${top.etiqueta}" (${pct(top.p)}).`
-        : `Índice vegetal ${pct(pred.indiceVegetal)} < ${pct(P.umbralIndiceVegetal)}.` });
+    // RC-01a: la validación previa (etapa 0) rechazó la imagen → no hubo clasificación
+    if (pred.ajena) {
+      disparadas.push({ ...R['RC-01'], detalle: pred.motivos.join(' ') });
+      return { accion: 'RECHAZAR_AJENA', disparadas };
+    }
+    // RC-01b: el modelo entrenado reconoce la imagen como su clase "Fondo/Otro"
+    if (top.claseId === '__ajena__') {
+      disparadas.push({ ...R['RC-01'], detalle: `El modelo clasificó la imagen como "${top.etiqueta}" (${pct(top.p)}).` });
       return { accion: 'RECHAZAR_AJENA', disparadas };
     }
     if (!top1) return { accion: 'RECHAZAR_AJENA', disparadas: [{ ...R['RC-01'], detalle: 'Ninguna etiqueta del modelo coincide con la base de conocimiento.' }] };
@@ -914,7 +953,10 @@ const UI = {
       panel.classList.remove('hidden');
       const { accion } = App.control;
 
-      if (accion === 'RECHAZAR_AJENA' || accion === 'RECHAZAR_CONFIANZA') {
+      if (accion === 'RECHAZAR_AJENA') {
+        // Imagen ajena: no se muestra ninguna probabilidad de enfermedad
+        panel.innerHTML = this.htmlRechazoAjena();
+      } else if (accion === 'RECHAZAR_CONFIANZA') {
         panel.innerHTML = this.htmlPrediccion() + this.htmlRechazo(accion);
       } else if (accion === 'REEVALUAR' || accion === 'DESEMPATAR') {
         const preguntas = Motor.preguntasRelevantes(App.organo, Motor.candidatos(App.pred));
@@ -955,6 +997,43 @@ const UI = {
           </div>
         </div>
         ${reglas ? `<div class="mt-4"><h4 class="text-sm font-semibold mb-2">Reglas de control disparadas</h4><ul class="space-y-2 text-sm">${reglas}</ul></div>` : ''}
+      </div>`;
+  },
+
+  /** Tarjeta de imagen no válida (etapa 0): sin clasificación ni porcentajes */
+  htmlRechazoAjena() {
+    const { pred, control } = App;
+    const P = App.kb.parametros;
+    const c = pred.color;
+    const regla = control.disparadas[0];
+    const motivos = pred.ajena ? pred.motivos : [regla.detalle];
+    const indicador = (titulo, valor, umbral, mayorEsMalo = false) => {
+      const ok = mayorEsMalo ? valor <= umbral : valor >= umbral;
+      return `<div class="p-2 rounded-lg ${ok ? 'bg-white' : 'bg-red-100'} text-center">
+        <div class="text-[11px] text-tierra-600">${titulo}</div>
+        <div class="font-mono font-semibold ${ok ? 'text-hoja-700' : 'text-red-700'}">${pct(valor)}</div>
+        <div class="text-[10px] text-tierra-600">${mayorEsMalo ? 'máx.' : 'mín.'} ${pct(umbral)}</div></div>`;
+    };
+    return `
+      <div class="rounded-2xl p-5 border-2 border-red-300 bg-red-50">
+        <div class="flex gap-4 items-start">
+          <img src="${App.imagenURL}" alt="" class="w-24 h-24 rounded-xl object-cover shrink-0 opacity-80" />
+          <div>
+            <h3 class="font-semibold text-lg">🚫 Imagen no válida para ${esc(App.kb.organos[App.organo].nombre.toLowerCase())}</h3>
+            <p class="text-sm mt-1">La fotografía no parece mostrar ${esc(App.kb.organos[App.organo].nombre.toLowerCase())} de uvilla, así que <b>no se analizó</b> ninguna enfermedad.</p>
+          </div>
+        </div>
+        <div class="mt-4 text-sm">
+          <div class="flex gap-2"><span class="font-mono text-[11px] px-1.5 py-0.5 rounded bg-red-200 text-red-800 h-fit">${regla.id}</span>
+          <ul class="list-disc pl-4 space-y-0.5">${motivos.map((m) => `<li>${esc(m)}</li>`).join('')}</ul></div>
+        </div>
+        ${pred.ajena ? `<div class="grid grid-cols-3 gap-2 mt-4">
+          ${indicador('Tejido vegetal', c.indiceVegetal, P.umbralIndiceVegetal)}
+          ${indicador('Órgano al centro', c.indiceCentral, P.umbralIndiceCentral)}
+          ${indicador('Cielo / agua', c.azul, P.umbralAzul, true)}
+        </div>` : ''}
+        <p class="text-[12px] text-tierra-600 mt-3">Consejo: acerque la cámara para que la hoja, el fruto o el tallo ocupe la mayor parte de la foto, sobre fondo neutro.</p>
+        <button data-accion="otra-foto" class="mt-4 bg-hoja-700 text-white text-sm px-4 py-2 rounded-xl">📷 Tomar otra fotografía</button>
       </div>`;
   },
 

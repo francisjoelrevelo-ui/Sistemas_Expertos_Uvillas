@@ -9,7 +9,7 @@
  *  - Background Sync: avisa a la app para vaciar la cola de sincronización.
  * ===================================================================== */
 
-const VERSION = 'uvilladx-v1.1.0';
+const VERSION = 'uvilladx-v1.1.1';
 const CACHE_SHELL = `${VERSION}-shell`;
 const CACHE_CDN = `${VERSION}-cdn`;
 const CACHE_MODELOS = 'uvilladx-modelos'; // sin versión: los modelos sobreviven a actualizaciones
