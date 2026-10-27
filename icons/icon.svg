@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#3f6212"/>
+  <!-- Cáliz (capuchón) de la uvilla -->
+  <path d="M256 92 C 170 140, 120 230, 150 330 C 180 410, 332 410, 362 330 C 392 230, 342 140, 256 92 Z" fill="#a3b763" opacity="0.55"/>
+  <!-- Fruto -->
+  <circle cx="256" cy="300" r="92" fill="#f59e0b"/>
+  <circle cx="226" cy="272" r="24" fill="#fcd34d" opacity="0.8"/>
+  <!-- Pedúnculo -->
+  <path d="M256 92 L256 60" stroke="#d9f99d" stroke-width="16" stroke-linecap="round"/>
+</svg>

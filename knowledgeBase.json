@@ -1,0 +1,309 @@
+{
+  "meta": {
+    "nombre": "Base de Conocimiento - Enfermedades de la uvilla (Physalis peruviana)",
+    "version": "1.0.0",
+    "institucion": "Universidad Politécnica Estatal del Carchi (UPEC) - Carrera de Computación",
+    "periodo": "2026 B",
+    "fuente": "Cartilla de enfermedades de la uvilla - Universidad de Nariño (síntesis). Validar agentes y rangos climáticos con el documento original y un agrónomo.",
+    "nota": "Los factores de certeza (FC) de las reglas son estimaciones expertas en el rango [-1, 1]. La combinación usa FC = FC1 + FC2 × (1 − FC1) para evidencias positivas (modelo MYCIN)."
+  },
+
+  "parametros": {
+    "umbralRechazo": 0.50,
+    "umbralReevaluacion": 0.70,
+    "margenDesempate": 0.15,
+    "umbralIndiceVegetal": 0.20,
+    "umbralDiagnosticoConfirmado": 0.75,
+    "umbralDiagnosticoProbable": 0.55,
+    "clasesAjenas": ["fondo", "otro", "otros", "background", "no uvilla", "ajeno", "desconocido", "class 0"]
+  },
+
+  "organos": {
+    "hojas": {
+      "nombre": "Hojas",
+      "icono": "🍃",
+      "descripcion": "Lámina foliar, haz y envés. Capture una hoja completa sobre fondo neutro.",
+      "clases": [
+        { "id": "mancha_gris",         "etiqueta": "Mancha gris" },
+        { "id": "muerte_descendente",  "etiqueta": "Muerte descendente" },
+        { "id": "esclerotiniosis",     "etiqueta": "Esclerotiniosis" },
+        { "id": "moho_blanco",         "etiqueta": "Moho blanco" },
+        { "id": "pudricion_dura",      "etiqueta": "Pudrición dura" },
+        { "id": "mancha_grasienta",    "etiqueta": "Mancha grasienta" },
+        { "id": "marchitez_bacterial", "etiqueta": "Marchitez bacterial" },
+        { "id": "sano",                "etiqueta": "Hoja sana" }
+      ]
+    },
+    "frutos": {
+      "nombre": "Frutos",
+      "icono": "🟠",
+      "descripcion": "Fruto con o sin cáliz (capuchón). Capture la zona con síntomas.",
+      "clases": [
+        { "id": "mancha_gris",        "etiqueta": "Mancha gris" },
+        { "id": "muerte_descendente", "etiqueta": "Muerte descendente" },
+        { "id": "esclerotiniosis",    "etiqueta": "Esclerotiniosis" },
+        { "id": "moho_blanco",        "etiqueta": "Moho blanco" },
+        { "id": "pudricion_dura",     "etiqueta": "Pudrición dura" },
+        { "id": "mancha_grasienta",   "etiqueta": "Mancha grasienta" },
+        { "id": "sano",               "etiqueta": "Fruto sano" }
+      ]
+    },
+    "tallos": {
+      "nombre": "Tallos",
+      "icono": "🌿",
+      "descripcion": "Tallo principal o ramas. Capture la lesión y la zona de transición con tejido sano.",
+      "clases": [
+        { "id": "esclerotiniosis", "etiqueta": "Esclerotiniosis" },
+        { "id": "moho_blanco",     "etiqueta": "Moho blanco" },
+        { "id": "pudricion_dura",  "etiqueta": "Pudrición dura" },
+        { "id": "sano",            "etiqueta": "Tallo sano" }
+      ]
+    }
+  },
+
+  "enfermedades": {
+    "mancha_gris": {
+      "nombre": "Mancha gris",
+      "agente": "Cercospora sp.",
+      "tipoAgente": "Hongo",
+      "severidad": "Media",
+      "rasgos": {
+        "hojas": "Lesiones circulares a irregulares con centro gris ceniza y borde marrón oscuro bien definido; pueden unirse y causar defoliación.",
+        "frutos": "Manchas grisáceas superficiales en el cáliz y, ocasionalmente, en la epidermis del fruto."
+      },
+      "clima": { "tMin": 15, "tMax": 28, "tOptMin": 18, "tOptMax": 25, "hrMin": 85, "descripcion": "Alta humedad relativa (>85 %), lluvias frecuentes y temperaturas templadas." },
+      "manejo": {
+        "cultural": ["Eliminar y destruir hojas basales afectadas fuera del lote.", "Podas de aireación para reducir la humedad dentro del follaje.", "Evitar riego por aspersión en horas de la tarde."],
+        "biologico": ["Aplicaciones preventivas de Trichoderma spp. o Bacillus subtilis sobre el follaje."],
+        "quimico": ["Fungicidas protectantes a base de cobre o mancozeb en rotación con triazoles registrados, según recomendación técnica."],
+        "preventivo": ["Monitoreo semanal del tercio inferior de la planta.", "Fertilización balanceada (evitar exceso de nitrógeno)."]
+      }
+    },
+    "muerte_descendente": {
+      "nombre": "Muerte descendente",
+      "agente": "Phoma sp.",
+      "tipoAgente": "Hongo",
+      "severidad": "Alta",
+      "rasgos": {
+        "hojas": "Necrosis que inicia en el ápice de brotes y ramas y avanza hacia abajo; hojas secas adheridas a la rama.",
+        "frutos": "Frutos y cálices necrosados en ramas afectadas; secado progresivo desde el pedúnculo."
+      },
+      "clima": { "tMin": 10, "tMax": 24, "tOptMin": 13, "tOptMax": 20, "hrMin": 80, "descripcion": "Temperaturas frescas, neblina, alta humedad y heridas por poda o granizo." },
+      "manejo": {
+        "cultural": ["Podar ramas afectadas 15–20 cm por debajo del tejido necrosado y desinfectar herramientas.", "Sellar cortes de poda con pasta cicatrizante.", "Retirar residuos de poda del lote."],
+        "biologico": ["Aplicar Trichoderma harzianum después de las podas sanitarias."],
+        "quimico": ["Fungicidas sistémicos registrados (p. ej. benzimidazoles o triazoles) en rotación, solo con asesoría técnica."],
+        "preventivo": ["Evitar heridas mecánicas.", "Tutorado adecuado para reducir el roce entre ramas."]
+      }
+    },
+    "esclerotiniosis": {
+      "nombre": "Esclerotiniosis",
+      "agente": "Sclerotinia sclerotiorum",
+      "tipoAgente": "Hongo",
+      "severidad": "Alta",
+      "rasgos": {
+        "hojas": "Lesiones acuosas, blandas, que se cubren de micelio blanco algodonoso con esclerocios negros.",
+        "frutos": "Pudrición blanda y húmeda con micelio blanco y esclerocios negros dentro del cáliz.",
+        "tallos": "Lesión acuosa que anilla el tallo; en su interior se forman esclerocios negros duros. Marchitez de la parte superior."
+      },
+      "clima": { "tMin": 8, "tMax": 25, "tOptMin": 15, "tOptMax": 21, "hrMin": 90, "descripcion": "Humedad relativa muy alta (>90 %), suelos húmedos y temperaturas frescas." },
+      "manejo": {
+        "cultural": ["Retirar y quemar o enterrar profundamente plantas y frutos con esclerocios.", "Mejorar drenaje y ampliar distancias de siembra.", "Rotación con gramíneas (no hospedantes)."],
+        "biologico": ["Aplicar Trichoderma spp. o Coniothyrium minitans al suelo para degradar esclerocios."],
+        "quimico": ["Fungicidas específicos registrados (p. ej. boscalid, iprodiona) dirigidos a la base de la planta, con asesoría técnica."],
+        "preventivo": ["No dejar residuos de cosecha en el lote.", "Evitar encharcamientos."]
+      }
+    },
+    "moho_blanco": {
+      "nombre": "Moho blanco",
+      "agente": "Complejo fúngico con micelio superficial (signo compartido con Sclerotinia spp.)",
+      "tipoAgente": "Hongo",
+      "severidad": "Media",
+      "rasgos": {
+        "hojas": "Crecimiento blanco superficial, algodonoso o pulverulento, SIN esclerocios negros.",
+        "frutos": "Micelio blanco sobre el cáliz o la epidermis; el tejido puede mantenerse relativamente firme al inicio.",
+        "tallos": "Capa blanca superficial sobre la corteza, sin anillamiento ni esclerocios internos."
+      },
+      "clima": { "tMin": 10, "tMax": 24, "tOptMin": 14, "tOptMax": 22, "hrMin": 88, "descripcion": "Ambiente húmedo y poco ventilado, follaje denso." },
+      "manejo": {
+        "cultural": ["Podas de aireación y deshierbe para mejorar la ventilación.", "Eliminar órganos cubiertos de micelio."],
+        "biologico": ["Bacillus subtilis o extractos vegetales registrados como preventivo."],
+        "quimico": ["Fungicidas protectantes (azufre o cobre) según recomendación técnica."],
+        "preventivo": ["Revisar los cálices en épocas lluviosas.", "Evitar alta densidad de siembra."]
+      }
+    },
+    "pudricion_dura": {
+      "nombre": "Pudrición dura",
+      "agente": "Complejo de pudrición seca (Fusarium spp. / Alternaria spp.)",
+      "tipoAgente": "Hongo",
+      "severidad": "Media",
+      "rasgos": {
+        "hojas": "Lesiones necróticas secas, de textura firme y quebradiza, color marrón oscuro.",
+        "frutos": "Lesión hundida, seca y FIRME; el fruto se momifica sin ablandarse.",
+        "tallos": "Cancros secos, duros y hundidos en la corteza, sin exudado húmedo."
+      },
+      "clima": { "tMin": 15, "tMax": 30, "tOptMin": 20, "tOptMax": 27, "hrMin": 70, "descripcion": "Alternancia de periodos húmedos y secos, heridas por insectos o manipulación." },
+      "manejo": {
+        "cultural": ["Retirar frutos momificados y tejidos con cancros.", "Cosechar en horas secas y evitar golpes al fruto."],
+        "biologico": ["Trichoderma spp. aplicado al suelo y a cortes."],
+        "quimico": ["Fungicidas registrados de amplio espectro en rotación, con asesoría técnica."],
+        "preventivo": ["Control de insectos que causan heridas.", "Desinfección de herramientas y gavetas de cosecha."]
+      }
+    },
+    "mancha_grasienta": {
+      "nombre": "Mancha grasienta",
+      "agente": "Xanthomonas sp.",
+      "tipoAgente": "Bacteria",
+      "severidad": "Media",
+      "rasgos": {
+        "hojas": "Manchas de aspecto aceitoso y translúcido (al trasluz), angulares, que luego se necrosan con halo amarillo.",
+        "frutos": "Manchas oscuras de aspecto grasiento o acuoso en la epidermis y el cáliz."
+      },
+      "clima": { "tMin": 16, "tMax": 30, "tOptMin": 20, "tOptMax": 28, "hrMin": 85, "descripcion": "Lluvias con salpique, alta humedad y temperaturas cálidas." },
+      "manejo": {
+        "cultural": ["Eliminar hojas afectadas y evitar trabajar el cultivo con follaje mojado.", "Usar material de siembra sano."],
+        "biologico": ["Bacillus spp. antagonistas registrados como preventivo."],
+        "quimico": ["Productos cúpricos (bactericidas) registrados, según recomendación técnica."],
+        "preventivo": ["Desinfectar herramientas entre plantas.", "Evitar riego por aspersión."]
+      }
+    },
+    "marchitez_bacterial": {
+      "nombre": "Marchitez bacterial",
+      "agente": "Ralstonia solanacearum",
+      "tipoAgente": "Bacteria",
+      "severidad": "Muy alta",
+      "rasgos": {
+        "hojas": "Marchitez de hojas (inicialmente en horas de calor) que no se recupera; la planta muere rápidamente. Haces vasculares pardos y exudado lechoso al cortar el tallo."
+      },
+      "clima": { "tMin": 18, "tMax": 35, "tOptMin": 24, "tOptMax": 32, "hrMin": 70, "descripcion": "Suelos húmedos y temperaturas cálidas; se dispersa por agua de riego, suelo y herramientas." },
+      "manejo": {
+        "cultural": ["Arrancar y destruir inmediatamente la planta con su raíz; aplicar cal viva en el hoyo.", "No movilizar suelo ni agua desde focos infectados.", "Rotación de al menos 3 años con gramíneas."],
+        "biologico": ["Incorporar materia orgánica y microorganismos benéficos para suprimir la bacteria en el suelo."],
+        "quimico": ["No existe control químico curativo eficaz. Priorizar exclusión y erradicación."],
+        "preventivo": ["Usar plántulas certificadas.", "Desinfectar calzado y herramientas.", "Prueba del vaso con agua ante cualquier marchitez sospechosa."]
+      }
+    },
+    "sano": {
+      "nombre": "Órgano sano",
+      "agente": "Ninguno",
+      "tipoAgente": "N/A",
+      "severidad": "Ninguna",
+      "rasgos": {
+        "hojas": "Color verde uniforme, sin manchas, necrosis ni micelio.",
+        "frutos": "Fruto anaranjado brillante, firme, cáliz sin lesiones.",
+        "tallos": "Corteza íntegra, sin cancros, lesiones acuosas ni micelio."
+      },
+      "clima": null,
+      "manejo": {
+        "cultural": ["Mantener podas de formación y aireación periódicas."],
+        "biologico": ["Aplicaciones preventivas de microorganismos benéficos."],
+        "quimico": ["No se requiere aplicación química."],
+        "preventivo": ["Continuar monitoreo semanal, especialmente en épocas de lluvia."]
+      }
+    }
+  },
+
+  "preguntas": [
+    {
+      "id": "esclerocios",
+      "texto": "¿Observa cuerpos negros y duros (esclerocios, parecidos a granos de arroz negros) dentro o sobre el micelio blanco?",
+      "organos": ["hojas", "frutos", "tallos"],
+      "enfermedades": ["esclerotiniosis", "moho_blanco"],
+      "opciones": [ { "valor": "si", "texto": "Sí" }, { "valor": "no", "texto": "No" }, { "valor": "ns", "texto": "No sé" } ]
+    },
+    {
+      "id": "textura",
+      "texto": "Al tacto, ¿cómo es la textura del tejido afectado?",
+      "organos": ["hojas", "frutos", "tallos"],
+      "enfermedades": ["pudricion_dura", "esclerotiniosis", "moho_blanco"],
+      "opciones": [ { "valor": "firme_seca", "texto": "Firme / seca / dura" }, { "valor": "blanda_humeda", "texto": "Blanda / húmeda / acuosa" }, { "valor": "ns", "texto": "No sé" } ]
+    },
+    {
+      "id": "micelio",
+      "texto": "¿Hay crecimiento blanco algodonoso visible sobre el tejido?",
+      "organos": ["hojas", "frutos", "tallos"],
+      "enfermedades": ["moho_blanco", "esclerotiniosis"],
+      "opciones": [ { "valor": "si", "texto": "Sí" }, { "valor": "no", "texto": "No" }, { "valor": "ns", "texto": "No sé" } ]
+    },
+    {
+      "id": "aceitoso",
+      "texto": "Mirando al trasluz, ¿las manchas tienen aspecto aceitoso, grasiento o translúcido?",
+      "organos": ["hojas", "frutos"],
+      "enfermedades": ["mancha_grasienta", "mancha_gris"],
+      "opciones": [ { "valor": "si", "texto": "Sí" }, { "valor": "no", "texto": "No" }, { "valor": "ns", "texto": "No sé" } ]
+    },
+    {
+      "id": "centro_gris",
+      "texto": "¿Las lesiones son redondeadas, con centro grisáceo y borde oscuro bien definido?",
+      "organos": ["hojas", "frutos"],
+      "enfermedades": ["mancha_gris", "mancha_grasienta"],
+      "opciones": [ { "valor": "si", "texto": "Sí" }, { "valor": "no", "texto": "No" }, { "valor": "ns", "texto": "No sé" } ]
+    },
+    {
+      "id": "desde_apice",
+      "texto": "¿La necrosis empieza en las puntas de brotes o ramas y avanza hacia abajo?",
+      "organos": ["hojas", "frutos"],
+      "enfermedades": ["muerte_descendente"],
+      "opciones": [ { "valor": "si", "texto": "Sí" }, { "valor": "no", "texto": "No" }, { "valor": "ns", "texto": "No sé" } ]
+    },
+    {
+      "id": "prueba_vaso",
+      "texto": "La planta se marchita aunque el suelo esté húmedo. Al cortar un trozo de tallo y sumergirlo en un vaso con agua, ¿sale un hilo de exudado lechoso?",
+      "organos": ["hojas"],
+      "enfermedades": ["marchitez_bacterial"],
+      "opciones": [ { "valor": "si", "texto": "Sí, sale exudado" }, { "valor": "no", "texto": "No sale exudado" }, { "valor": "ns", "texto": "No realicé la prueba" } ]
+    },
+    {
+      "id": "momificado",
+      "texto": "¿El fruto presenta lesiones hundidas y se está secando o momificando sin ablandarse?",
+      "organos": ["frutos"],
+      "enfermedades": ["pudricion_dura"],
+      "opciones": [ { "valor": "si", "texto": "Sí" }, { "valor": "no", "texto": "No" }, { "valor": "ns", "texto": "No sé" } ]
+    },
+    {
+      "id": "anillamiento",
+      "texto": "¿La lesión rodea completamente el tallo (anillamiento) y la parte superior se marchita?",
+      "organos": ["tallos"],
+      "enfermedades": ["esclerotiniosis", "pudricion_dura", "moho_blanco"],
+      "opciones": [ { "valor": "si", "texto": "Sí" }, { "valor": "no", "texto": "No" }, { "valor": "ns", "texto": "No sé" } ]
+    }
+  ],
+
+  "reglas": {
+    "confianza": [
+      { "id": "RC-01", "si": "La clase predicha pertenece a una clase ajena (fondo/otro) o el índice vegetal de la imagen es menor al umbral", "entonces": "RECHAZAR: la imagen no corresponde al órgano seleccionado. Solicitar otra fotografía.", "accion": "RECHAZAR_AJENA" },
+      { "id": "RC-02", "si": "Confianza máxima del modelo < 0.50", "entonces": "RECHAZAR: confianza insuficiente. Solicitar una nueva fotografía con mejor luz y enfoque.", "accion": "RECHAZAR_CONFIANZA" },
+      { "id": "RC-03", "si": "0.50 ≤ Confianza máxima < 0.70", "entonces": "REEVALUAR: activar preguntas de síntomas para confirmar el diagnóstico.", "accion": "REEVALUAR" },
+      { "id": "RC-04", "si": "Diferencia entre la 1.ª y 2.ª clase < 0.15", "entonces": "DESEMPATAR: aplicar reglas de síntomas entre las clases en conflicto.", "accion": "DESEMPATAR" },
+      { "id": "RC-05", "si": "Clase predicha = sano Y confianza ≥ 0.70 Y sin conflicto", "entonces": "Órgano SANO: mostrar recomendaciones preventivas.", "accion": "SANO" }
+    ],
+
+    "sintomas": [
+      { "id": "RS-01", "si": { "pregunta": "esclerocios", "valor": "si" }, "entonces": [ { "enfermedad": "esclerotiniosis", "fc": 0.85 }, { "enfermedad": "moho_blanco", "fc": -0.60 } ], "explicacion": "Los esclerocios negros son signo diagnóstico de Sclerotinia sclerotiorum; el moho blanco solo presenta micelio." },
+      { "id": "RS-02", "si": { "pregunta": "esclerocios", "valor": "no" }, "entonces": [ { "enfermedad": "esclerotiniosis", "fc": -0.35 }, { "enfermedad": "moho_blanco", "fc": 0.40 } ], "explicacion": "Micelio sin esclerocios favorece moho blanco como signo superficial." },
+      { "id": "RS-03", "si": { "pregunta": "textura", "valor": "firme_seca" }, "entonces": [ { "enfermedad": "pudricion_dura", "fc": 0.80 }, { "enfermedad": "esclerotiniosis", "fc": -0.50 }, { "enfermedad": "moho_blanco", "fc": -0.20 } ], "explicacion": "Tejido firme y seco es característico de la pudrición dura." },
+      { "id": "RS-04", "si": { "pregunta": "textura", "valor": "blanda_humeda" }, "entonces": [ { "enfermedad": "esclerotiniosis", "fc": 0.55 }, { "enfermedad": "moho_blanco", "fc": 0.25 }, { "enfermedad": "pudricion_dura", "fc": -0.70 } ], "explicacion": "Tejido blando y acuoso indica pudrición húmeda (Sclerotinia), no pudrición dura." },
+      { "id": "RS-05", "si": { "pregunta": "micelio", "valor": "si" }, "entonces": [ { "enfermedad": "moho_blanco", "fc": 0.55 }, { "enfermedad": "esclerotiniosis", "fc": 0.35 } ], "explicacion": "El micelio blanco es signo compartido por moho blanco y esclerotiniosis." },
+      { "id": "RS-06", "si": { "pregunta": "micelio", "valor": "no" }, "entonces": [ { "enfermedad": "moho_blanco", "fc": -0.75 }, { "enfermedad": "esclerotiniosis", "fc": -0.30 } ], "explicacion": "Sin micelio visible el moho blanco es poco probable." },
+      { "id": "RS-07", "si": { "pregunta": "aceitoso", "valor": "si" }, "entonces": [ { "enfermedad": "mancha_grasienta", "fc": 0.80 }, { "enfermedad": "mancha_gris", "fc": -0.30 } ], "explicacion": "El aspecto aceitoso/translúcido es típico de la bacteriosis (mancha grasienta)." },
+      { "id": "RS-08", "si": { "pregunta": "aceitoso", "valor": "no" }, "entonces": [ { "enfermedad": "mancha_grasienta", "fc": -0.50 } ], "explicacion": "Sin aspecto grasiento se descarta parcialmente la mancha grasienta." },
+      { "id": "RS-09", "si": { "pregunta": "centro_gris", "valor": "si" }, "entonces": [ { "enfermedad": "mancha_gris", "fc": 0.75 }, { "enfermedad": "mancha_grasienta", "fc": -0.30 } ], "explicacion": "Centro gris con borde oscuro definido es característico de Cercospora." },
+      { "id": "RS-10", "si": { "pregunta": "centro_gris", "valor": "no" }, "entonces": [ { "enfermedad": "mancha_gris", "fc": -0.40 } ], "explicacion": "Ausencia del patrón típico reduce la certeza de mancha gris." },
+      { "id": "RS-11", "si": { "pregunta": "desde_apice", "valor": "si" }, "entonces": [ { "enfermedad": "muerte_descendente", "fc": 0.80 } ], "explicacion": "La necrosis apical descendente es el síntoma definitorio de la muerte descendente." },
+      { "id": "RS-12", "si": { "pregunta": "desde_apice", "valor": "no" }, "entonces": [ { "enfermedad": "muerte_descendente", "fc": -0.50 } ], "explicacion": "Sin avance desde el ápice se reduce la probabilidad de muerte descendente." },
+      { "id": "RS-13", "si": { "pregunta": "prueba_vaso", "valor": "si" }, "entonces": [ { "enfermedad": "marchitez_bacterial", "fc": 0.90 } ], "explicacion": "El exudado bacteriano en agua confirma Ralstonia solanacearum." },
+      { "id": "RS-14", "si": { "pregunta": "prueba_vaso", "valor": "no" }, "entonces": [ { "enfermedad": "marchitez_bacterial", "fc": -0.60 } ], "explicacion": "Sin exudado la marchitez bacterial es poco probable." },
+      { "id": "RS-15", "si": { "pregunta": "momificado", "valor": "si" }, "entonces": [ { "enfermedad": "pudricion_dura", "fc": 0.65 }, { "enfermedad": "esclerotiniosis", "fc": -0.30 } ], "explicacion": "Frutos hundidos y momificados sin ablandarse indican pudrición dura." },
+      { "id": "RS-16", "si": { "pregunta": "momificado", "valor": "no" }, "entonces": [ { "enfermedad": "pudricion_dura", "fc": -0.30 } ], "explicacion": "Sin momificación disminuye la certeza de pudrición dura en fruto." },
+      { "id": "RS-17", "si": { "pregunta": "anillamiento", "valor": "si" }, "entonces": [ { "enfermedad": "esclerotiniosis", "fc": 0.60 }, { "enfermedad": "moho_blanco", "fc": -0.40 } ], "explicacion": "El anillamiento con marchitez superior es típico de Sclerotinia en tallo." },
+      { "id": "RS-18", "si": { "pregunta": "anillamiento", "valor": "no" }, "entonces": [ { "enfermedad": "esclerotiniosis", "fc": -0.25 }, { "enfermedad": "moho_blanco", "fc": 0.20 } ], "explicacion": "Lesión superficial sin anillamiento favorece moho blanco." }
+    ],
+
+    "climaticas": [
+      { "id": "RK-01", "si": "Temperatura dentro del rango óptimo de la enfermedad Y HR ≥ HR mínima favorable", "entonces": "Condiciones MUY favorables", "fc": 0.45 },
+      { "id": "RK-02", "si": "Temperatura dentro del rango tolerable Y HR ≥ (HR mínima − 10)", "entonces": "Condiciones favorables", "fc": 0.20 },
+      { "id": "RK-03", "si": "Temperatura fuera del rango tolerable O HR < (HR mínima − 20)", "entonces": "Condiciones desfavorables", "fc": -0.35 },
+      { "id": "RK-04", "si": "Ninguna de las anteriores", "entonces": "Condiciones neutras (sin aporte)", "fc": 0.0 }
+    ]
+  }
+}

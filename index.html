@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>UvillaDx · Diagnóstico de uvilla</title>
+  <meta name="description" content="Sistema híbrido ML + Sistema Experto para el diagnóstico de enfermedades de la uvilla (Physalis peruviana). UPEC 2026 B." />
+  <meta name="theme-color" content="#3f6212" />
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="UvillaDx" />
+
+  <!-- Tailwind CSS (CDN, versión fija para que el Service Worker la cachee) -->
+  <script src="https://cdn.tailwindcss.com/3.4.16"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            hoja:  { 50:'#f6f8ef', 100:'#e9efd9', 200:'#d3dfb4', 300:'#b4c984', 400:'#93af58', 500:'#76933b', 600:'#5b752c', 700:'#3f6212', 800:'#33491f', 900:'#2b3d1c' },
+            uvilla:{ 50:'#fff8eb', 100:'#feeac7', 200:'#fdd28a', 300:'#fcb54d', 400:'#fb9b24', 500:'#f59e0b', 600:'#d97706', 700:'#b45309' },
+            tierra:{ 50:'#f7f8f3', 100:'#eceee4', 600:'#57534e', 800:'#292524' }
+          },
+          fontFamily: { sans: ['system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'] }
+        }
+      }
+    };
+  </script>
+  <style>
+    /* Detalles que Tailwind CDN no cubre cómodamente */
+    body { -webkit-tap-highlight-color: transparent; }
+    .barra-fc { transition: width .6s cubic-bezier(.2,.8,.2,1); }
+    .vista { animation: aparecer .25s ease-out; }
+    @keyframes aparecer { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    input[type=range] { accent-color: #3f6212; }
+    .scroll-fino::-webkit-scrollbar { height: 6px; width: 6px; }
+    .scroll-fino::-webkit-scrollbar-thumb { background: #d3dfb4; border-radius: 3px; }
+  </style>
+</head>
+
+<body class="bg-tierra-50 text-tierra-800 font-sans min-h-screen">
+
+  <!-- ================= BARRA SUPERIOR ================= -->
+  <header class="sticky top-0 z-30 bg-hoja-700 text-white shadow-md">
+    <div class="max-w-6xl mx-auto px-4 h-14 flex items-center gap-3">
+      <img src="icons/icon.svg" alt="" class="w-8 h-8 rounded-lg" />
+      <div class="leading-tight">
+        <h1 class="font-semibold text-base">UvillaDx</h1>
+        <p class="text-[11px] text-hoja-200 hidden sm:block">Sistema híbrido ML + Sistema Experto · UPEC 2026 B</p>
+      </div>
+      <div class="ml-auto flex items-center gap-2">
+        <!-- Estado de conexión -->
+        <span id="estado-red" class="text-xs px-2 py-1 rounded-full bg-hoja-600 flex items-center gap-1">
+          <span class="w-2 h-2 rounded-full bg-lime-300"></span><span>En línea</span>
+        </span>
+        <!-- Cola pendiente -->
+        <span id="badge-cola" class="hidden text-xs px-2 py-1 rounded-full bg-uvilla-500 text-white" title="Diagnósticos pendientes de sincronizar">0</span>
+        <!-- Perfil -->
+        <button id="btn-perfil" data-ir="cuenta" class="text-xs px-3 py-1.5 rounded-full bg-white/15 hover:bg-white/25 flex items-center gap-1.5 max-w-[150px]">
+          <span>👤</span><span id="nombre-perfil" class="truncate">Invitado</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Aviso de actualización / instalación -->
+  <div id="aviso-instalar" class="hidden bg-uvilla-100 text-uvilla-700 text-sm">
+    <div class="max-w-6xl mx-auto px-4 py-2 flex items-center gap-3">
+      <span>📲 Instale UvillaDx para usarla sin conexión en campo.</span>
+      <button id="btn-instalar" class="ml-auto px-3 py-1 rounded-md bg-uvilla-600 text-white text-xs font-medium">Instalar</button>
+      <button id="btn-cerrar-instalar" class="text-uvilla-700 text-lg leading-none" aria-label="Cerrar">×</button>
+    </div>
+  </div>
+
+  <div class="max-w-6xl mx-auto md:flex md:gap-6 md:px-4">
+
+    <!-- ================= NAVEGACIÓN LATERAL (escritorio) ================= -->
+    <nav class="hidden md:block w-52 shrink-0 pt-6">
+      <ul class="space-y-1 sticky top-20" id="nav-lateral">
+        <li><button data-ir="dashboard"    class="nav-btn w-full text-left px-3 py-2 rounded-lg flex items-center gap-2">🏠 <span>Panel</span></button></li>
+        <li><button data-ir="diagnostico"  class="nav-btn w-full text-left px-3 py-2 rounded-lg flex items-center gap-2">🔬 <span>Diagnóstico</span></button></li>
+        <li><button data-ir="historial"    class="nav-btn w-full text-left px-3 py-2 rounded-lg flex items-center gap-2">🗂️ <span>Historial</span></button></li>
+        <li><button data-ir="conocimiento" class="nav-btn w-full text-left px-3 py-2 rounded-lg flex items-center gap-2">📚 <span>Base de conocimiento</span></button></li>
+        <li><button data-ir="modelos"      class="nav-btn w-full text-left px-3 py-2 rounded-lg flex items-center gap-2">🧠 <span>Modelos ML</span></button></li>
+        <li><button data-ir="cuenta"       class="nav-btn w-full text-left px-3 py-2 rounded-lg flex items-center gap-2">👤 <span>Cuenta</span></button></li>
+      </ul>
+    </nav>
+
+    <main class="flex-1 min-w-0 px-4 md:px-0 pt-5 pb-28 md:pb-10">
+
+      <!-- ================= VISTA: PANEL ================= -->
+      <section id="vista-dashboard" class="vista space-y-5">
+        <div class="rounded-2xl bg-gradient-to-br from-hoja-700 to-hoja-600 text-white p-5 md:p-6 shadow">
+          <p class="text-hoja-200 text-sm">Bienvenido/a, <span id="saludo-nombre">Invitado</span></p>
+          <h2 class="text-xl md:text-2xl font-semibold mt-1">Diagnóstico de enfermedades de la uvilla</h2>
+          <p class="text-sm text-hoja-100 mt-2 max-w-xl">Capture una foto de la hoja, el fruto o el tallo. Un modelo de visión artificial propone la enfermedad y el sistema experto la confirma con reglas de síntomas, clima y factores de certeza.</p>
+          <button data-ir="diagnostico" class="mt-4 inline-flex items-center gap-2 bg-uvilla-500 hover:bg-uvilla-600 text-white font-medium px-4 py-2.5 rounded-xl shadow">🔬 Nuevo diagnóstico</button>
+        </div>
+
+        <!-- Indicadores -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3" id="kpis"></div>
+
+        <div class="grid lg:grid-cols-2 gap-4">
+          <div class="bg-white rounded-2xl p-4 shadow-sm border border-tierra-100">
+            <h3 class="font-semibold mb-3">Diagnósticos por enfermedad</h3>
+            <div id="grafico-enfermedades" class="space-y-2 text-sm"></div>
+          </div>
+          <div class="bg-white rounded-2xl p-4 shadow-sm border border-tierra-100">
+            <h3 class="font-semibold mb-3">Últimos diagnósticos</h3>
+            <div id="ultimos-diagnosticos" class="divide-y divide-tierra-100 text-sm"></div>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-2xl p-4 shadow-sm border border-tierra-100">
+          <h3 class="font-semibold mb-2">Estado del sistema</h3>
+          <div id="estado-sistema" class="grid sm:grid-cols-3 gap-3 text-sm"></div>
+        </div>
+      </section>
+
+      <!-- ================= VISTA: DIAGNÓSTICO ================= -->
+      <section id="vista-diagnostico" class="vista hidden space-y-5">
+        <div>
+          <h2 class="text-xl font-semibold">Nuevo diagnóstico</h2>
+          <p class="text-sm text-tierra-600">Siga los pasos. Todo el análisis se ejecuta en su dispositivo, incluso sin conexión.</p>
+        </div>
+
+        <!-- Paso 1: órgano -->
+        <div class="bg-white rounded-2xl p-4 shadow-sm border border-tierra-100">
+          <h3 class="font-semibold mb-3"><span class="inline-grid place-items-center w-6 h-6 rounded-full bg-hoja-700 text-white text-xs mr-2">1</span>Seleccione el órgano de la planta</h3>
+          <div id="selector-organo" class="grid grid-cols-3 gap-3"></div>
+        </div>
+
+        <!-- Paso 2: imagen -->
+        <div class="bg-white rounded-2xl p-4 shadow-sm border border-tierra-100">
+          <h3 class="font-semibold mb-3"><span class="inline-grid place-items-center w-6 h-6 rounded-full bg-hoja-700 text-white text-xs mr-2">2</span>Capture o cargue una fotografía</h3>
+          <div class="grid sm:grid-cols-2 gap-4">
+            <div>
+              <div id="zona-imagen" class="relative aspect-square rounded-xl border-2 border-dashed border-hoja-200 bg-hoja-50 grid place-items-center overflow-hidden cursor-pointer">
+                <div id="placeholder-imagen" class="text-center text-sm text-hoja-600 p-4">
+                  <div class="text-4xl mb-2">📷</div>
+                  Toque para seleccionar o arrastre una imagen aquí
+                </div>
+                <img id="preview-imagen" alt="Vista previa" class="hidden absolute inset-0 w-full h-full object-cover" />
+              </div>
+              <div class="flex gap-2 mt-3">
+                <label class="flex-1 text-center cursor-pointer bg-hoja-700 hover:bg-hoja-800 text-white text-sm font-medium py-2.5 rounded-xl">
+                  📸 Cámara
+                  <input id="input-camara" type="file" accept="image/*" capture="environment" class="hidden" />
+                </label>
+                <label class="flex-1 text-center cursor-pointer bg-hoja-100 hover:bg-hoja-200 text-hoja-800 text-sm font-medium py-2.5 rounded-xl">
+                  🖼️ Galería
+                  <input id="input-galeria" type="file" accept="image/*" class="hidden" />
+                </label>
+              </div>
+            </div>
+            <div class="text-sm space-y-2 text-tierra-600">
+              <p class="font-medium text-tierra-800">Recomendaciones para la foto</p>
+              <ul class="space-y-1.5 list-disc pl-5">
+                <li>Luz natural difusa, sin sombras fuertes ni flash directo.</li>
+                <li>Encuadre un solo órgano ocupando la mayor parte de la imagen.</li>
+                <li>Enfoque la lesión y la zona de transición con tejido sano.</li>
+                <li>Fondo neutro (cartón, mano, cielo nublado).</li>
+              </ul>
+              <p id="info-organo" class="mt-3 p-3 rounded-lg bg-hoja-50 text-hoja-800"></p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Paso 3: clima -->
+        <div class="bg-white rounded-2xl p-4 shadow-sm border border-tierra-100">
+          <h3 class="font-semibold mb-1"><span class="inline-grid place-items-center w-6 h-6 rounded-full bg-hoja-700 text-white text-xs mr-2">3</span>Condiciones climáticas en la captura</h3>
+          <p class="text-xs text-tierra-600 mb-3">Se usan en las reglas climáticas para ajustar el factor de certeza.</p>
+          <div class="grid sm:grid-cols-2 gap-5">
+            <div>
+              <label for="temp" class="flex justify-between text-sm font-medium"><span>🌡️ Temperatura</span><span><input id="temp-num" type="number" min="0" max="40" step="0.5" class="w-16 text-right border rounded px-1" /> °C</span></label>
+              <input id="temp" type="range" min="0" max="40" step="0.5" class="w-full mt-2" />
+              <div class="flex justify-between text-[11px] text-tierra-600"><span>0 °C</span><span>40 °C</span></div>
+            </div>
+            <div>
+              <label for="hr" class="flex justify-between text-sm font-medium"><span>💧 Humedad relativa</span><span><input id="hr-num" type="number" min="0" max="100" step="1" class="w-16 text-right border rounded px-1" /> %</span></label>
+              <input id="hr" type="range" min="0" max="100" step="1" class="w-full mt-2" />
+              <div class="flex justify-between text-[11px] text-tierra-600"><span>0 %</span><span>100 %</span></div>
+            </div>
+          </div>
+          <label class="flex items-center gap-2 text-sm mt-3">
+            <input id="usar-clima" type="checkbox" checked class="accent-hoja-700 w-4 h-4" />
+            Aplicar reglas climáticas
+          </label>
+          <input id="ubicacion" type="text" placeholder="Lote / finca (opcional)" class="mt-3 w-full border border-tierra-100 rounded-lg px-3 py-2 text-sm" />
+        </div>
+
+        <button id="btn-analizar" disabled class="w-full bg-uvilla-500 hover:bg-uvilla-600 disabled:bg-tierra-100 disabled:text-tierra-600 text-white font-semibold py-3.5 rounded-2xl shadow text-base">
+          🔬 Analizar con el sistema híbrido
+        </button>
+
+        <!-- Resultados -->
+        <div id="panel-resultado" class="hidden space-y-4"></div>
+      </section>
+
+      <!-- ================= VISTA: HISTORIAL ================= -->
+      <section id="vista-historial" class="vista hidden space-y-4">
+        <div class="flex flex-wrap items-end gap-3">
+          <div>
+            <h2 class="text-xl font-semibold">Historial</h2>
+            <p class="text-sm text-tierra-600">Diagnósticos guardados en el dispositivo y en la nube.</p>
+          </div>
+          <div class="ml-auto flex gap-2">
+            <button id="btn-sincronizar" class="text-sm bg-hoja-700 text-white px-3 py-2 rounded-lg">☁️ Sincronizar</button>
+            <button id="btn-exportar" class="text-sm bg-hoja-100 text-hoja-800 px-3 py-2 rounded-lg">⬇️ Exportar CSV</button>
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-2 text-sm">
+          <select id="filtro-organo" class="border border-tierra-100 rounded-lg px-2 py-1.5 bg-white">
+            <option value="">Todos los órganos</option>
+            <option value="hojas">Hojas</option><option value="frutos">Frutos</option><option value="tallos">Tallos</option>
+          </select>
+          <select id="filtro-sync" class="border border-tierra-100 rounded-lg px-2 py-1.5 bg-white">
+            <option value="">Todos los estados</option>
+            <option value="pendiente">Pendiente (offline)</option>
+            <option value="sincronizado">Sincronizado</option>
+            <option value="local">Solo local (invitado)</option>
+          </select>
+        </div>
+        <div id="lista-historial" class="grid gap-3"></div>
+      </section>
+
+      <!-- ================= VISTA: BASE DE CONOCIMIENTO ================= -->
+      <section id="vista-conocimiento" class="vista hidden space-y-4">
+        <div>
+          <h2 class="text-xl font-semibold">Base de conocimiento</h2>
+          <p class="text-sm text-tierra-600">Enfermedades, agentes causales, condiciones favorables, reglas SI–ENTONCES y fichas de manejo.</p>
+        </div>
+        <div class="flex gap-2 overflow-x-auto scroll-fino pb-1" id="tabs-kb">
+          <button data-kb="enfermedades" class="kb-tab px-3 py-1.5 rounded-full text-sm whitespace-nowrap">Enfermedades</button>
+          <button data-kb="clases" class="kb-tab px-3 py-1.5 rounded-full text-sm whitespace-nowrap">Clases por órgano (19)</button>
+          <button data-kb="reglas" class="kb-tab px-3 py-1.5 rounded-full text-sm whitespace-nowrap">Reglas SI–ENTONCES</button>
+          <button data-kb="fc" class="kb-tab px-3 py-1.5 rounded-full text-sm whitespace-nowrap">Factores de certeza</button>
+        </div>
+        <div id="contenido-kb"></div>
+      </section>
+
+      <!-- ================= VISTA: MODELOS ================= -->
+      <section id="vista-modelos" class="vista hidden space-y-4">
+        <div>
+          <h2 class="text-xl font-semibold">Modelos de visión (Teachable Machine)</h2>
+          <p class="text-sm text-tierra-600">Cargue un modelo por órgano. Sin modelo, la app usa un <b>simulador</b> basado en el color de la imagen (solo para demostración).</p>
+        </div>
+        <div id="lista-modelos" class="grid gap-4"></div>
+        <div class="bg-hoja-50 rounded-2xl p-4 text-sm text-hoja-800 border border-hoja-100">
+          <p class="font-semibold mb-1">¿Cómo exportar desde Teachable Machine?</p>
+          <ol class="list-decimal pl-5 space-y-1">
+            <li>Entrene un proyecto de imagen con las clases del órgano (los nombres deben coincidir con la base de conocimiento; se ignoran tildes y mayúsculas).</li>
+            <li>Opcional: añada una clase <b>“Fondo”</b> u <b>“Otro”</b> con imágenes ajenas para activar el rechazo automático.</li>
+            <li>Exportar modelo → TensorFlow.js → <i>Upload</i> (obtiene un enlace) o <i>Download</i> (model.json, weights.bin, metadata.json).</li>
+            <li>Pegue el enlace o seleccione los 3 archivos aquí. El modelo se guarda en el dispositivo para funcionar sin conexión.</li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- ================= VISTA: CUENTA ================= -->
+      <section id="vista-cuenta" class="vista hidden space-y-4">
+        <h2 class="text-xl font-semibold">Cuenta y perfil</h2>
+        <div id="contenido-cuenta"></div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ================= NAVEGACIÓN INFERIOR (móvil) ================= -->
+  <nav class="md:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t border-tierra-100 pb-[env(safe-area-inset-bottom)]">
+    <ul class="grid grid-cols-5 text-[11px]" id="nav-inferior">
+      <li><button data-ir="dashboard"    class="nav-btn w-full py-2 flex flex-col items-center gap-0.5"><span class="text-lg">🏠</span>Panel</button></li>
+      <li><button data-ir="diagnostico"  class="nav-btn w-full py-2 flex flex-col items-center gap-0.5"><span class="text-lg">🔬</span>Diagnóstico</button></li>
+      <li><button data-ir="historial"    class="nav-btn w-full py-2 flex flex-col items-center gap-0.5"><span class="text-lg">🗂️</span>Historial</button></li>
+      <li><button data-ir="conocimiento" class="nav-btn w-full py-2 flex flex-col items-center gap-0.5"><span class="text-lg">📚</span>Saber</button></li>
+      <li><button data-ir="modelos"      class="nav-btn w-full py-2 flex flex-col items-center gap-0.5"><span class="text-lg">🧠</span>Modelos</button></li>
+    </ul>
+  </nav>
+
+  <!-- ================= MODAL DETALLE ================= -->
+  <div id="modal" class="hidden fixed inset-0 z-40 bg-black/50 p-4 overflow-y-auto">
+    <div class="max-w-2xl mx-auto bg-white rounded-2xl shadow-xl my-6">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-tierra-100">
+        <h3 id="modal-titulo" class="font-semibold"></h3>
+        <button id="modal-cerrar" class="text-2xl leading-none px-2" aria-label="Cerrar">×</button>
+      </div>
+      <div id="modal-cuerpo" class="p-4"></div>
+    </div>
+  </div>
+
+  <!-- ================= NOTIFICACIONES ================= -->
+  <div id="toasts" class="fixed z-50 bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 space-y-2 w-[calc(100%-2rem)] max-w-sm"></div>
+
+  <!-- TensorFlow.js (se carga después de la interfaz) -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js" defer></script>
+  <script src="app.js" defer></script>
+</body>
+</html>

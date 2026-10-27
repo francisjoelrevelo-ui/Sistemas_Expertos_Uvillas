@@ -1,0 +1,19 @@
+{
+  "name": "UvillaDx - Diagnóstico de enfermedades de la uvilla",
+  "short_name": "UvillaDx",
+  "description": "Sistema híbrido (Machine Learning + Sistema Experto) para el diagnóstico de enfermedades de la uvilla (Physalis peruviana). UPEC - Computación 2026 B.",
+  "lang": "es-EC",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f7f8f3",
+  "theme_color": "#3f6212",
+  "categories": ["agriculture", "education", "productivity"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
