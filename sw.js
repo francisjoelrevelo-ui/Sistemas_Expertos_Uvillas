@@ -9,7 +9,7 @@
  *  - Background Sync: avisa a la app para vaciar la cola de sincronización.
  * ===================================================================== */
 
-const VERSION = 'uvilladx-v1.0.1';
+const VERSION = 'uvilladx-v1.0.2';
 const CACHE_SHELL = `${VERSION}-shell`;
 const CACHE_CDN = `${VERSION}-cdn`;
 const CACHE_MODELOS = 'uvilladx-modelos'; // sin versión: los modelos sobreviven a actualizaciones
@@ -36,7 +36,9 @@ const CDN_ASSETS = [
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const shell = await caches.open(CACHE_SHELL);
-    await shell.addAll(APP_SHELL);
+    // cache: 'reload' evita la caché HTTP del navegador (GitHub Pages la guarda 10 min),
+    // así cada versión nueva del SW guarda los archivos recién publicados.
+    await shell.addAll(APP_SHELL.map((u) => new Request(u, { cache: 'reload' })));
 
     // Las librerías CDN se cachean una a una: si alguna falla no se aborta la instalación
     const cdn = await caches.open(CACHE_CDN);
@@ -86,7 +88,7 @@ async function cacheFirst(request, cacheName) {
 async function staleWhileRevalidate(request, cacheName) {
   const cache = await caches.open(cacheName);
   const cached = await cache.match(request, { ignoreSearch: true });
-  const network = fetch(request)
+  const network = fetch(request, { cache: 'no-cache' })
     .then((resp) => {
       if (resp && resp.ok) cache.put(request, resp.clone());
       return resp;
